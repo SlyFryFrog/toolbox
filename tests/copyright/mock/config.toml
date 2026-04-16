@@ -1,0 +1,27 @@
+[tool]
+fix = true
+default_year = "2026"
+author = "Marcus Gigandet"
+license = "apache_2_0"
+
+[licenses.apache_2_0]
+file = "licenses/apache-2.0.txt"
+
+[languages.cpp]
+extensions = [".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hh", ".hxx", ".cppm", "ixx"]
+block_start = "/*"
+line_prefix = " * "
+block_end = " */"
+
+[languages.rust]
+extensions = [".rs"]
+line_prefix = "//"
+
+[languages.python]
+extensions = [".py"]
+block_start = '"""'
+block_end = '"""'
+
+[languages.ada]
+extensions = [".adb", ".ads"]
+line_prefix = "--"
