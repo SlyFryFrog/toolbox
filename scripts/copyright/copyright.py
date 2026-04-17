@@ -104,16 +104,23 @@ def format_header(text: str, style: CommentStyle) -> str:
     :param style: Comment style configuration.
     :return: Formatted header string.
     """
-    lines = text.strip().splitlines()
+    lines = [line.strip() for line in text.strip().splitlines()]
 
     if style.block_start:
         body = "\n".join(
-            f"{style.line_prefix if style.line_prefix else ''}{line}" for line in lines
+            f"{style.line_prefix}{line}" if line else style.line_prefix.rstrip()
+            for line in lines
         )
         return f"{style.block_start}\n{body}\n{style.block_end}\n\n"
 
     if style.line_prefix:
-        return "\n".join(f"{style.line_prefix} {line}" for line in lines) + "\n\n"
+        return (
+            "\n".join(
+                f"{style.line_prefix} {line}" if line else style.line_prefix
+                for line in lines
+            )
+            + "\n\n"
+        )
 
     raise ValueError("Invalid comment style")
 
@@ -348,7 +355,7 @@ def main() -> int:
     args = parser.parse_args()
 
     config = load_config(Path(args.config))
-    
+
     # Check for license
     if not config["tool"]["license"]:
         return CopyrightStatus.NO_LICENSE_GIVEN.number
