@@ -343,7 +343,7 @@ class CopyrightEnforcer:
         :return: Execution status.
         """
 
-        exclude_patterns = self._config["copyright"]["exclude"]
+        exclude_patterns = self._config.get("copyright", {}).get("exclude")
 
         for file in self._root_dir.rglob("*"):
             if not file.is_file():
@@ -351,8 +351,11 @@ class CopyrightEnforcer:
 
             relative_path = str(file.relative_to(self._root_dir))
 
-            if any(re.search(pattern, relative_path) for pattern in exclude_patterns):
-                continue
+            if exclude_patterns:
+                if any(
+                    re.search(pattern, relative_path) for pattern in exclude_patterns
+                ):
+                    continue
 
             self.process_file(file)
 
