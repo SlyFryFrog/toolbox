@@ -103,6 +103,15 @@ class CopyrightToolTests(unittest.TestCase):
             )
         )
 
+    def test_symmetric_ada_block_delimiters_occupy_complete_lines(self) -> None:
+        style = copyright_tool.CommentStyle("-- ", "-- ", "-- ")
+        expected = copyright_tool.format_header(
+            "Copyright 2020 Example Author\n\nLicense text.", style
+        )
+        source = expected + "package Example is\nend Example;\n"
+
+        self.assertTrue(copyright_tool.has_header_at_top(source, style, expected))
+
     def test_check_mode_reports_without_modifying(self) -> None:
         source = self.root / "missing.py"
         source.write_text("print('unchanged')\n")

@@ -360,6 +360,30 @@ def _consume_line_breaks(text: str, offset: int, maximum: int) -> int:
     return offset
 
 
+def _delimiter_occupies_line(text: str, offset: int, delimiter: str) -> bool:
+    """Return whether a delimiter occupies a complete source line."""
+    end = offset + len(delimiter)
+    starts_line = offset == 0 or text[offset - 1] == "\n"
+    ends_line = (
+        end == len(text)
+        or text.startswith("\n", end)
+        or text.startswith("\r\n", end)
+    )
+    return starts_line and ends_line
+
+
+def _standalone_delimiter(
+    text: str, delimiter: str, start: int
+) -> int | None:
+    """Find the next occurrence of a delimiter on a line by itself."""
+    offset = text.find(delimiter, start)
+    while offset != -1:
+        if _delimiter_occupies_line(text, offset, delimiter):
+            return offset
+        offset = text.find(delimiter, offset + 1)
+    return None
+
+
 def _block_header_end(text: str, start: int, style: CommentStyle) -> int | None:
     """
     Find the end of a copyright block comment.
@@ -372,8 +396,23 @@ def _block_header_end(text: str, start: int, style: CommentStyle) -> int | None:
     assert style.block_start and style.block_end
     if not text.startswith(style.block_start, start):
         return None
-    closing = text.find(style.block_end, start + len(style.block_start))
-    if closing == -1:
+
+    # Ada-style decorative delimiters are also prefixes of every body line.
+    # Match them only when they occupy a complete line so ``-- Copyright`` is
+    # not mistaken for the closing ``-- `` line.
+    line_delimiters = bool(
+        style.line_prefix and style.line_prefix.startswith(style.block_end)
+    )
+    if line_delimiters:
+        if not _delimiter_occupies_line(text, start, style.block_start):
+            return None
+        closing = _standalone_delimiter(
+            text, style.block_end, start + len(style.block_start)
+        )
+    else:
+        found = text.find(style.block_end, start + len(style.block_start))
+        closing = None if found == -1 else found
+    if closing is None:
         return None
     end = closing + len(style.block_end)
     if "Copyright" not in text[start:end]:
