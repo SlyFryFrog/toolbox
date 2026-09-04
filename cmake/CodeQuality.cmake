@@ -48,7 +48,7 @@ function(_toolbox_add_command_target)
 endfunction()
 
 function(enforce_copyright)
-    set(options "")
+    set(options CHECK FIX)
     set(oneValueArgs CONFIG_FILE SOURCE_DIR TARGET)
     set(multiValueArgs "")
     cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
@@ -57,14 +57,35 @@ function(enforce_copyright)
         message(FATAL_ERROR "enforce_copyright requires CONFIG_FILE and SOURCE_DIR.")
     endif ()
 
+    if (ARG_CHECK AND ARG_FIX)
+        message(FATAL_ERROR "enforce_copyright accepts only one of CHECK or FIX.")
+    endif ()
+
+    find_program(UVX_EXECUTABLE NAMES uvx REQUIRED)
+    get_filename_component(
+            _toolbox_package
+            "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/.."
+            ABSOLUTE
+    )
+
+    set(_mode_args "")
+    if (ARG_CHECK)
+        list(APPEND _mode_args --check)
+    elseif (ARG_FIX)
+        list(APPEND _mode_args --fix)
+    endif ()
+
     _toolbox_make_rule_name(_rule_name "enforce_copyright" TARGET "${ARG_TARGET}")
     _toolbox_add_command_target(
             NAME ${_rule_name}
             COMMENT "Syncing copyright headers with Git history"
             WORKING_DIRECTORY "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/.."
-            COMMAND python3 -m scripts.copyright
+            COMMAND "${UVX_EXECUTABLE}"
+                    --from "${_toolbox_package}"
+                    toolbox-copyright
                     --config "${ARG_CONFIG_FILE}"
                     --directory "${ARG_SOURCE_DIR}"
+                    ${_mode_args}
             DEPENDS_ON "${ARG_TARGET}"
     )
 endfunction()
