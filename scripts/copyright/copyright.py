@@ -365,16 +365,12 @@ def _delimiter_occupies_line(text: str, offset: int, delimiter: str) -> bool:
     end = offset + len(delimiter)
     starts_line = offset == 0 or text[offset - 1] == "\n"
     ends_line = (
-        end == len(text)
-        or text.startswith("\n", end)
-        or text.startswith("\r\n", end)
+        end == len(text) or text.startswith("\n", end) or text.startswith("\r\n", end)
     )
     return starts_line and ends_line
 
 
-def _standalone_delimiter(
-    text: str, delimiter: str, start: int
-) -> int | None:
+def _standalone_delimiter(text: str, delimiter: str, start: int) -> int | None:
     """Find the next occurrence of a delimiter on a line by itself."""
     offset = text.find(delimiter, start)
     while offset != -1:
