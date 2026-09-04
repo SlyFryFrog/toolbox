@@ -360,24 +360,38 @@ def _consume_line_breaks(text: str, offset: int, maximum: int) -> int:
     return offset
 
 
-def _delimiter_occupies_line(text: str, offset: int, delimiter: str) -> bool:
-    """Return whether a delimiter occupies a complete source line."""
-    end = offset + len(delimiter)
-    starts_line = offset == 0 or text[offset - 1] == "\n"
-    ends_line = (
-        end == len(text) or text.startswith("\n", end) or text.startswith("\r\n", end)
-    )
-    return starts_line and ends_line
+def _standalone_delimiter_end(text: str, offset: int, delimiter: str) -> int | None:
+    """Return the end of a delimiter line, allowing trailing whitespace."""
+    marker = delimiter.rstrip(" \t")
+    if not marker or (offset != 0 and text[offset - 1] != "\n"):
+        return None
+    if not text.startswith(marker, offset):
+        return None
 
-
-def _standalone_delimiter(text: str, delimiter: str, start: int) -> int | None:
-    """Find the next occurrence of a delimiter on a line by itself."""
-    offset = text.find(delimiter, start)
-    while offset != -1:
-        if _delimiter_occupies_line(text, offset, delimiter):
-            return offset
-        offset = text.find(delimiter, offset + 1)
+    end = offset + len(marker)
+    while end < len(text) and text[end] in " \t":
+        end += 1
+    if end == len(text) or text.startswith("\n", end) or text.startswith("\r\n", end):
+        return end
     return None
+
+
+def _ada_block_end(text: str, start: int, style: CommentStyle) -> int | None:
+    """Find the last delimiter in a contiguous Ada-style comment block."""
+    assert style.block_start and style.block_end and style.line_prefix
+    opening_end = _standalone_delimiter_end(text, start, style.block_start)
+    if opening_end is None:
+        return None
+
+    prefix = style.line_prefix.rstrip(" \t")
+    cursor = _line_end(text, opening_end)
+    closing_end = None
+    while cursor < len(text) and text.startswith(prefix, cursor):
+        delimiter_end = _standalone_delimiter_end(text, cursor, style.block_end)
+        if delimiter_end is not None:
+            closing_end = delimiter_end
+        cursor = _line_end(text, cursor)
+    return closing_end
 
 
 def _block_header_end(text: str, start: int, style: CommentStyle) -> int | None:
@@ -390,27 +404,22 @@ def _block_header_end(text: str, start: int, style: CommentStyle) -> int | None:
     :return Header end offset, or None when no valid header is present.
     """
     assert style.block_start and style.block_end
-    if not text.startswith(style.block_start, start):
-        return None
-
     # Ada-style decorative delimiters are also prefixes of every body line.
-    # Match them only when they occupy a complete line so ``-- Copyright`` is
-    # not mistaken for the closing ``-- `` line.
+    # The license body can contain blank ``--`` lines, so use the last
+    # standalone delimiter in the contiguous comment block as the close.
     line_delimiters = bool(
-        style.line_prefix and style.line_prefix.startswith(style.block_end)
+        style.line_prefix
+        and style.line_prefix.rstrip(" \t").startswith(style.block_end.rstrip(" \t"))
     )
     if line_delimiters:
-        if not _delimiter_occupies_line(text, start, style.block_start):
-            return None
-        closing = _standalone_delimiter(
-            text, style.block_end, start + len(style.block_start)
-        )
+        end = _ada_block_end(text, start, style)
     else:
+        if not text.startswith(style.block_start, start):
+            return None
         found = text.find(style.block_end, start + len(style.block_start))
-        closing = None if found == -1 else found
-    if closing is None:
+        end = None if found == -1 else found + len(style.block_end)
+    if end is None:
         return None
-    end = closing + len(style.block_end)
     if "Copyright" not in text[start:end]:
         return None
     return _consume_line_breaks(text, end, 2)
@@ -519,6 +528,7 @@ class CopyrightEnforcer:
         validate_config(config)
         self._config = config
         self._violations: list[Path] = []
+        self._fixed_files: list[Path] = []
         resolved_root = root_dir.resolve()
         resolved_config_dir = (config_dir or Path.cwd()).resolve()
         self._runtime = _Runtime(
@@ -701,16 +711,16 @@ class CopyrightEnforcer:
             print(f"INVALID {file}")
         return valid
 
-    def fix_file(self, file: Path) -> None:
+    def fix_file(self, file: Path) -> bool:
         """
         Insert or replace a supported file's copyright header.
 
         :param file Source file to update.
-        :return None.
+        :return True when the file was changed.
         """
         language = get_language(file, self._config)
         if not language:
-            return
+            return False
         style = CommentStyle.from_language(language)
         text = self._read(file)
         newline = _newline_for(text)
@@ -724,6 +734,8 @@ class CopyrightEnforcer:
             updated = text[:start] + header + text[start:]
         if updated != text:
             self._write(file, updated)
+            return True
+        return False
 
     def process_file(self, file: Path) -> None:
         """
@@ -736,8 +748,8 @@ class CopyrightEnforcer:
             return
         if not self.check_file(file):
             self._violations.append(file)
-            if self._runtime.fix:
-                self.fix_file(file)
+            if self._runtime.fix and self.fix_file(file):
+                self._fixed_files.append(file)
 
     def _is_excluded(self, file: Path) -> bool:
         """
@@ -761,6 +773,7 @@ class CopyrightEnforcer:
             raise ValueError(f"directory does not exist: {self._runtime.root_dir}")
 
         self._violations.clear()
+        self._fixed_files.clear()
         files = sorted(
             (
                 file
@@ -777,9 +790,10 @@ class CopyrightEnforcer:
             if not self._is_excluded(file):
                 self.process_file(file)
 
-        for index, file in enumerate(self._violations, start=1):
-            action = "FIXED" if self._runtime.fix else "VIOLATION"
-            print(f"[{index}/{len(self._violations)}] {action} {file}")
+        reported_files = self._fixed_files if self._runtime.fix else self._violations
+        action = "FIXED" if self._runtime.fix else "VIOLATION"
+        for index, file in enumerate(reported_files, start=1):
+            print(f"[{index}/{len(reported_files)}] {action} {file}")
 
         if self._violations and not self._runtime.fix:
             return CopyrightStatus.MISSING_HEADER

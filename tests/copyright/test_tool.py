@@ -18,7 +18,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
+from unittest import mock
 
 from scripts.copyright import copyright as copyright_tool
 
@@ -90,6 +93,23 @@ class CopyrightToolTests(unittest.TestCase):
         self.assertTrue(contents.startswith("// Copyright 2020 Example Author\n"))
         self.assertNotIn("Old license", contents)
 
+    def test_fix_mode_does_not_report_unchanged_file_as_fixed(self) -> None:
+        source = self.root / "main.rs"
+        source.write_text("fn main() {}\n")
+        fixer = self.enforcer(fix=True)
+        output = StringIO()
+
+        with (
+            mock.patch.object(fixer, "check_file", return_value=False),
+            mock.patch.object(fixer, "fix_file", return_value=False),
+            redirect_stdout(output),
+        ):
+            status = fixer.run()
+
+        self.assertEqual(status, copyright_tool.CopyrightStatus.SUCCESS)
+        self.assertEqual(output.getvalue(), "")
+        self.assertEqual(fixer.violations, (source.resolve(),))
+
     def test_check_requires_the_configured_header(self) -> None:
         style = copyright_tool.CommentStyle(None, None, "//")
         text = "// Copyright 2020 Another Author\n\nfn main() {}\n"
@@ -111,6 +131,36 @@ class CopyrightToolTests(unittest.TestCase):
         source = expected + "package Example is\nend Example;\n"
 
         self.assertTrue(copyright_tool.has_header_at_top(source, style, expected))
+
+    def test_fix_replaces_complete_ada_header_without_duplication(self) -> None:
+        source = self.root / "main.ads"
+        source.write_text(
+            "-- \n"
+            "-- Copyright 1999 Somebody Else\n"
+            "--\n"
+            "-- Old license\n"
+            "-- \n\n"
+            "package Main is\nend Main;\n"
+        )
+        config = make_config()
+        config["languages"]["ada"] = {
+            "extensions": [".ads"],
+            "block_start": "--",
+            "line_prefix": "-- ",
+            "block_end": "--",
+        }
+        fixer = copyright_tool.CopyrightEnforcer(
+            config, self.root, fix=True, verbose=False, config_dir=self.root
+        )
+
+        fixer.run()
+        contents = source.read_text()
+        fixer.run()
+
+        self.assertEqual(source.read_text(), contents)
+        self.assertEqual(contents.count("Copyright"), 1)
+        self.assertNotIn("Old license", contents)
+        self.assertEqual(contents.count("package Main is"), 1)
 
     def test_check_mode_reports_without_modifying(self) -> None:
         source = self.root / "missing.py"
