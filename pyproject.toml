@@ -1,0 +1,43 @@
+[project]
+name = "marcus-toolbox"
+version = "0.1.0"
+description = "Reusable development utilities"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Marcus Gigandet" },
+]
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/marcusgigandet/toolbox"
+
+[project.scripts]
+toolbox-copyright = "scripts.copyright.__main__:main"
+
+[dependency-groups]
+dev = [
+    "black",
+    "isort",
+    "mypy",
+    "pylint",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.9,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv]
+required-version = ">=0.12.9,<0.13"
+
+[tool.uv.build-backend]
+module-name = "scripts.copyright"
+module-root = ""
+
+[tool.isort]
+profile = "black"
+
+[tool.black]
+target-version = ["py311"]

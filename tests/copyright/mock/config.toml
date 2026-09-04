@@ -1,5 +1,5 @@
 [copyright]
-fix = true
+fix = false
 default_year = "2026"
 author = "Marcus Gigandet"
 license = "apache_2_0"
